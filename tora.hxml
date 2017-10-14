@@ -1,6 +1,14 @@
 -cp src
 -neko tora.n
 -main Tora
+
+# -lib instrument
+# --macro instrument.TraceCalls.hijack("Tora")
+# --macro instrument.TraceCalls.hijack("Client")
+# --macro instrument.TraceCalls.hijack("fcgi.ClientFcgi")
+# --macro instrument.TraceCalls.hijack("ModNekoApi")
+# --macro instrument.TraceCalls.hijack("ModToraApi")
+
 --next
 -cp src
 -neko tora_admin.n

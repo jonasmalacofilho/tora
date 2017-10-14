@@ -858,6 +858,15 @@ class Tora {
 	public static var inst : Tora;
 
 	static function main() {
+#if instrument
+		instrument.TraceCalls.onCalled = function (?pos:haxe.PosInfos) {
+			Sys.stderr().writeString('-- CALL ${pos.className}.${pos.methodName}\n');
+		}
+#end
+		haxe.Log.trace = function (msg:Dynamic, ?pos:haxe.PosInfos) {
+			var data = pos.customParams != null ? " " + pos.customParams.toString() : "";
+			Sys.stderr().writeString('[tora] $msg$data  @ ${pos.fileName}:${pos.lineNumber}\n');
+		}
 		var host = "127.0.0.1";
 		var port = 6666;
 		var args = Sys.args();

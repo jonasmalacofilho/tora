@@ -20,12 +20,12 @@ package fcgi;
 
 import fcgi.Message;
 import fcgi.StatusCode;
+import fcgi.MultipartState;
 
 import haxe.ds.StringMap;
 import haxe.io.Bytes;
 
 import tora.Code;
-
 
 class ClientFcgi extends Client
 {
@@ -38,10 +38,17 @@ class ClientFcgi extends Client
 	
 	var fcgiParams : List<{ k : String, v : String }>;
 	
-	var isMultipart : Bool;
 	var contentType : String;
 	var contentLength : Int;
 	
+	var doMultipart : Bool;
+	var mpstate : MultipartState;
+	var mpbuffer : String;
+	var mpbufpos : Int;
+	var mpboundary : Null<String>;
+	var mpeof : Bool;
+	var mpbufsize : Int;
+
 	var dataIn : String;
 	
 	var statusOut : String;
@@ -64,10 +71,17 @@ class ClientFcgi extends Client
 		
 		fcgiParams = new List();
 		
-		isMultipart = false;
 		contentType = null;
 		contentLength = null;
 		
+		doMultipart = false;
+		mpstate = null;
+		mpbuffer = null;
+		mpbufpos = -1;
+		mpboundary = null;
+		mpeof = false;
+		mpbufsize = 0;
+
 		dataIn = null;
 		
 		statusOut = null;
@@ -91,10 +105,19 @@ class ClientFcgi extends Client
 		
 		fcgiParams = new List();
 		
-		isMultipart = false;
+		mpboundary = null;
+
 		contentType = null;
 		contentLength = null;
 		
+		doMultipart = false;
+		mpstate = null;
+		mpbuffer = null;
+		mpbufpos = -1;
+		mpboundary = null;
+		mpeof = false;
+		mpbufsize = 0;
+
 		dataIn = null;
 		
 		statusOut = null;
@@ -162,32 +185,8 @@ class ClientFcgi extends Client
 				MessageHelper.write(sock.output, requestId, END_REQUEST(202, REQUEST_COMPLETE));
 			
 			case CQueryMultipart:
-				if ( isMultipart )
-				{
-					var bufSize = Std.parseInt(msg);
-					
-					for ( m in multiparts )
-					{
-						if ( m.file != null ) fileMessages.add( { code: CPartFilename, str: m.file } );
-						fileMessages.add( { code: CPartKey, str: m.name } );
-						
-						if( m.data.length < bufSize )
-							fileMessages.add( { code: CPartData, str: m.data } );
-						else
-						{
-							var i = 0;
-							while ( i < m.data.length )
-							{
-								fileMessages.add( { code: CPartData, str: m.data.substr(i, bufSize) } );
-								i += bufSize;
-							}
-						}
-						
-						fileMessages.add( { code: CPartDone, str: null } );
-					}
-				}
-				fileMessages.add( { code: CExecute, str: null } );
-			
+				doMultipart = true;
+				mpbufsize = Std.parseInt(msg);
 			case CLog:
 				// save 2 file
 				//Tora.log('App log: ' + msg);
@@ -262,6 +261,11 @@ class ClientFcgi extends Client
 	
 	override public function readMessageBuffer( buf : Bytes ) : Code
 	{
+		while (doMultipart && !processMultipart()) {
+			while (!mpeof && !processMessage()) {
+			}
+		}
+
 		if ( fileMessages.length > 0 )
 		{
 			var m = fileMessages.pop();
@@ -277,6 +281,109 @@ class ClientFcgi extends Client
 		
 		return super.readMessageBuffer(buf);
 	}
+
+
+	inline function startsWith(buf:String, start:String, ?bufPos=0)
+	{
+		return buf.length >= bufPos + start.length && buf.substr(bufPos, start.length) == start;
+	}
+
+
+	function processMultipart():Bool
+	{
+		var FETCH = false;
+		var CONTROL = true;
+
+		while (true) {
+			switch mpstate {
+			case MFinished:
+				mpbuffer = null;
+				mpbufpos = -1;
+				fileMessages.add({ code:CExecute, str:null });
+				doMultipart = false;
+				return CONTROL;
+			case MBeforeFirstPart:
+				var b = mpbuffer.indexOf(mpboundary, mpbufpos);
+				if (b >= 0) {
+					mpbufpos = b + mpboundary.length;  // jump over boundary but not -- or \r\n
+					mpstate = MPartInit;
+					continue;
+				}
+				return FETCH;
+			case MPartInit:
+				if (mpbuffer.substr(mpbufpos, 2) == "--") {
+					mpbufpos += 2; // mark -- as read
+					mpstate = MFinished;
+				} else {
+					mpbufpos += 2;  // jump over \r\n
+					mpstate = MPartReadingHeaders;
+				}
+			case MPartReadingHeaders:
+				var b = mpbuffer.indexOf("\r\n\r\n", mpbufpos);
+				if (b >= 0) {
+					while (mpbufpos < b && !startsWith(mpbuffer, "Content-Disposition:", mpbufpos)) {
+						mpbufpos = mpbuffer.indexOf("\r\n", mpbufpos) + 2;  // jump over \r\n
+					}
+					if (!startsWith(mpbuffer, "Content-Disposition:", mpbufpos)) {
+						throw "Assert failed: part missing Content-Disposition header";
+					}
+					var fn = mpbuffer.indexOf('filename=', mpbufpos);
+					if (fn > 0 && fn < b) {
+						fn += 9;
+						var q = mpbuffer.charAt(fn++);
+						var filename = mpbuffer.substring(fn, mpbuffer.indexOf(q, fn));
+						fileMessages.add({ code:CPartFilename, str:filename });
+					}
+					var n = mpbuffer.indexOf('name=', mpbufpos);
+					if (n > 0 && n < b) {
+						n += 5;
+						var q = mpbuffer.charAt(n++);
+						var name = mpbuffer.substring(n, mpbuffer.indexOf(q, n));
+						fileMessages.add({ code:CPartKey, str:name });
+					}
+					mpbufpos = b + 4;  // jump over \r\n\r\n
+					mpstate = MPartReadingData;
+					return CONTROL;
+				}
+				return FETCH;
+			case MPartReadingData:
+				var b = mpbuffer.indexOf(mpboundary, mpbufpos);
+				if (b >= 0) {
+					while (mpbufpos < b - 2) {  // remove trailling \r\n
+						var len = b - 2 - mpbufpos;
+						if (len > mpbufsize)
+							len = mpbufsize;
+						fileMessages.add({ code:CPartData, str:mpbuffer.substr(mpbufpos, len) });
+						mpbufpos += len;
+					}
+					fileMessages.add({ code:CPartDone, str:null });
+					mpbufpos = b + mpboundary.length;  // jump over boundary but not \r\n
+					mpstate = MPartInit;
+					return CONTROL;
+				} else {
+					b = mpbuffer.indexOf("\r\n--", mpbufpos);
+					if (mpbufpos >= mpbuffer.length)
+						break;
+					if (b < 0 || !startsWith(mpboundary, mpbuffer.substr(mpbufpos + 2, mpboundary.length))) {
+						while (mpbufpos < mpbuffer.length) {
+							var len = mpbuffer.length - mpbufpos;
+							if (len > mpbufsize)
+								len = mpbufsize;
+							fileMessages.add({ code:CPartData, str:mpbuffer.substr(mpbufpos, len) });
+							mpbufpos += len;
+						}
+						return CONTROL;
+					}
+				}
+			}
+		}
+		if (mpbufpos > 0) {
+			mpbuffer = mpbuffer.substr(mpbufpos);
+			mpbufpos = 0;
+		}
+		return FETCH;
+	}
+
 	override public function processMessage( ) : Bool
 	{
 		var m = MessageHelper.read(sock.input);
@@ -299,79 +406,37 @@ class ClientFcgi extends Client
 				// This is truly a response from the application, not a low-level acknowledgement from the FastCGI library.
 				MessageHelper.write(sock.output, requestId, END_REQUEST(202, REQUEST_COMPLETE));
 				this.execute = false;
-			
+
+			case STDIN(s) if (mpboundary != null):
+				if (s == "")
+					mpeof = true;
+				mpbuffer += s;
+				execute = true;
+				return true;
+
+			case STDIN(s) if (s == ""):
+				for (p in getParamValues(getParams, true))
+					params.push(p);
+				for (p in getParamValues(postData, false))
+					params.push(p);
+				if (postData == null)
+					postData = "";
+				this.execute = true;
+				return true;
+
+			case STDIN(s) if ((postData != null ? postData.length : 0) + s.length > (1 << 20)):
+				// hardcoded limit: 1 MiB
+				// (256 KiB, as specified in neko.Web.getPostData() docs, is too little; plus, 1 MiB is Nginx's default)
+				Tora.log("Maximum POST data exceeded (1 MiB). Try using multipart encoding");
+				MessageHelper.write(sock.output, requestId, END_REQUEST(413, REQUEST_COMPLETE));
+				this.execute = false;
+				return true;
+
 			case STDIN(s):
-				if ( s == "" )
-				{
-					for ( p in getParamValues(getParams, true) ) params.push(p);
-					
-					if ( !isMultipart )
-					{
-						for ( p in getParamValues(postData, false) ) params.push(p);
-					}
-					else
-					{
-						var pos = contentType.indexOf('boundary=');
-						if ( pos != null )
-						{
-							pos += 9; //boundary=
-							var boundary = '--' + contentType.substr(pos);
-							var parts = postData.split(boundary);
-							for ( part in parts )
-							{
-								if ( part == '' ) continue;
-								if ( part.substr(0, 2) == '--' ) break;
-								
-								var p = part.indexOf("\r\n\r\n");
-								var h = part.substr(0 + 2, p - 2); // \r\n
-								var data = part.substr(p + 4, part.length - p - 4 - 2); // \r\n
-								
-								var name : String = null;
-								var file : String = null;
-								var hs = h.split("\r\n");
-								for ( s in hs )
-								{
-									if ( s.indexOf('Content-Disposition:') == 0 )
-									{
-										p = s.indexOf('name=');
-										if ( p > 0 )
-										{
-											p += 5;
-											var c : String = s.charAt(p++);
-											name = s.substring(p, s.indexOf(c, p));
-										}
-										
-										p = s.indexOf('filename=');
-										if( p > 0 )
-										{
-											p += 9;
-											var c : String = s.charAt(p++);
-											file = s.substring(p, s.indexOf(c, p));
-										}
-									}
-								}
-								
-								if ( name == null )
-									continue;
-								
-								multiparts.add({
-									name: name,
-									file: file,
-									data: data
-								});
-							}
-						}
-					}
-/*CTestConnect*/	
-/*CHostResolve*/	
-/*CError*/			
-/*CExecute*/
-					execute = true;
-					return true;
-				}
-				if ( postData == null ) postData = '';
+				if (postData == null)
+					postData = '';
 /*CPostData*/	postData += s;
-			
+
 			case DATA(s): // not implimented @ nginx
 				// FCGI_DATA is a second stream record type used to send additional data to the application.
 				if ( s == "" )
@@ -408,8 +473,18 @@ class ClientFcgi extends Client
 						if ( value == null || value.length < 1 ) continue;
 						
 						contentType = value;
-						isMultipart = contentType.indexOf('multipart/form-data') > -1;
-						
+
+						if (contentType.indexOf('multipart/form-data') > -1) {
+							var pos = contentType.indexOf('boundary=');
+							if (pos < 0)
+								return false;
+							pos += 9;  //boundary=
+							mpboundary = '--' + contentType.substr(pos);
+							mpstate = MBeforeFirstPart;
+							mpbuffer = "";
+							mpbufpos = 0;
+							doMultipart = false;
+						}
 					}
 					else if ( name == 'CONTENT_LENGTH' ) 
 					{
