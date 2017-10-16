@@ -49,11 +49,6 @@ class MultipartParser {
 			return pop();
 		while (true) {
 			switch state {
-			case MFinished:
-				buf = null;
-				pos = -1;
-				add({ code:CExecute, buffer:null, start:0, length:0 });
-				break;
 			case MBeforeFirstPart:
 				var b = buf.indexOf(boundary, pos);
 				if (b >= 0) {
@@ -129,6 +124,11 @@ class MultipartParser {
 						break;
 					}
 				}
+			case MFinished:
+				buf = null;
+				pos = -1;
+				add({ code:CExecute, buffer:null, start:0, length:0 });
+				break;
 			}
 		}
 		return pop();
