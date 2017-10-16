@@ -20,7 +20,7 @@ package fcgi;
 
 import fcgi.Message;
 import fcgi.StatusCode;
-import fcgi.MultipartState;
+import fcgi.MultipartParser;
 
 import haxe.ds.StringMap;
 import haxe.io.Bytes;
@@ -41,13 +41,8 @@ class ClientFcgi extends Client
 	var contentType : String;
 	var contentLength : Int;
 	
-	var doMultipart : Bool;
-	var mpstate : MultipartState;
-	var mpbuffer : String;
-	var mpbufpos : Int;
-	var mpboundary : Null<String>;
-	var mpeof : Bool;
-	var mpbufsize : Int;
+	var multipart : Null<MultipartParser>;
+	var eoin : Bool;
 
 	var dataIn : String;
 	
@@ -57,9 +52,6 @@ class ClientFcgi extends Client
 	
 	var statusSent : Bool;
 	var bodyStarted : Bool;
-	
-	var multiparts : List<{name : String, file : String, data : String}>;
-	var fileMessages : List<{ code : Code, str : String }>;
 	
 	public function new(s,secure)
 	{
@@ -74,13 +66,8 @@ class ClientFcgi extends Client
 		contentType = null;
 		contentLength = null;
 		
-		doMultipart = false;
-		mpstate = null;
-		mpbuffer = null;
-		mpbufpos = -1;
-		mpboundary = null;
-		mpeof = false;
-		mpbufsize = 0;
+		multipart = null;
+		eoin = false;
 
 		dataIn = null;
 		
@@ -90,9 +77,6 @@ class ClientFcgi extends Client
 		
 		statusSent = false;
 		bodyStarted = false;
-		
-		multiparts = new List();
-		fileMessages = new List();
 	}
 	
 	override public function prepare( ) : Void
@@ -105,18 +89,11 @@ class ClientFcgi extends Client
 		
 		fcgiParams = new List();
 		
-		mpboundary = null;
-
 		contentType = null;
 		contentLength = null;
 		
-		doMultipart = false;
-		mpstate = null;
-		mpbuffer = null;
-		mpbufpos = -1;
-		mpboundary = null;
-		mpeof = false;
-		mpbufsize = 0;
+		multipart = null;
+		eoin = false;
 
 		dataIn = null;
 		
@@ -126,9 +103,6 @@ class ClientFcgi extends Client
 		
 		statusSent = false;
 		bodyStarted = false;
-		
-		multiparts = new List();
-		fileMessages = new List();
 	}
 	
 	override public function sendMessageSub( code : Code, msg : String, pos : Int, len : Int ) : Void
@@ -185,8 +159,9 @@ class ClientFcgi extends Client
 				MessageHelper.write(sock.output, requestId, END_REQUEST(202, REQUEST_COMPLETE));
 			
 			case CQueryMultipart:
-				doMultipart = true;
-				mpbufsize = Std.parseInt(msg);
+				if (multipart != null)
+					multipart.outputSize = Std.parseInt(msg);
+
 			case CLog:
 				// save 2 file
 				//Tora.log('App log: ' + msg);
@@ -261,127 +236,21 @@ class ClientFcgi extends Client
 	
 	override public function readMessageBuffer( buf : Bytes ) : Code
 	{
-		while (doMultipart && !processMultipart()) {
-			while (!mpeof && !processMessage()) {
+		if (multipart != null) {
+			var next = multipart.read();
+			while (!eoin && next == null) {
+				while (!processMessage()) {}
+				next = multipart.read();
+			}
+			if (next != null) {
+				if (next.buffer != null) {
+					bytes = next.length;
+					buf.blit(0, Bytes.ofData(neko.NativeString.ofString(next.buffer)), next.start, bytes);
+				}
+				return next.code;
 			}
 		}
-
-		if ( fileMessages.length > 0 )
-		{
-			var m = fileMessages.pop();
-			
-			if ( m.str != null )
-			{
-				bytes = m.str.length;
-				buf.blit(0, Bytes.ofString(m.str), 0, m.str.length);
-			}
-			
-			return m.code;
-		}
-		
-		return super.readMessageBuffer(buf);
-	}
-
-
-	inline function startsWith(buf:String, start:String, ?bufPos=0)
-	{
-		return buf.length >= bufPos + start.length && buf.substr(bufPos, start.length) == start;
-	}
-
-
-	function processMultipart():Bool
-	{
-		var FETCH = false;
-		var CONTROL = true;
-
-		while (true) {
-			switch mpstate {
-			case MFinished:
-				mpbuffer = null;
-				mpbufpos = -1;
-				fileMessages.add({ code:CExecute, str:null });
-				doMultipart = false;
-				return CONTROL;
-			case MBeforeFirstPart:
-				var b = mpbuffer.indexOf(mpboundary, mpbufpos);
-				if (b >= 0) {
-					mpbufpos = b + mpboundary.length;  // jump over boundary but not -- or \r\n
-					mpstate = MPartInit;
-					continue;
-				}
-				return FETCH;
-			case MPartInit:
-				if (mpbuffer.substr(mpbufpos, 2) == "--") {
-					mpbufpos += 2; // mark -- as read
-					mpstate = MFinished;
-				} else {
-					mpbufpos += 2;  // jump over \r\n
-					mpstate = MPartReadingHeaders;
-				}
-			case MPartReadingHeaders:
-				var b = mpbuffer.indexOf("\r\n\r\n", mpbufpos);
-				if (b >= 0) {
-					while (mpbufpos < b && !startsWith(mpbuffer, "Content-Disposition:", mpbufpos)) {
-						mpbufpos = mpbuffer.indexOf("\r\n", mpbufpos) + 2;  // jump over \r\n
-					}
-					if (!startsWith(mpbuffer, "Content-Disposition:", mpbufpos)) {
-						throw "Assert failed: part missing Content-Disposition header";
-					}
-					var fn = mpbuffer.indexOf('filename=', mpbufpos);
-					if (fn > 0 && fn < b) {
-						fn += 9;
-						var q = mpbuffer.charAt(fn++);
-						var filename = mpbuffer.substring(fn, mpbuffer.indexOf(q, fn));
-						fileMessages.add({ code:CPartFilename, str:filename });
-					}
-					var n = mpbuffer.indexOf('name=', mpbufpos);
-					if (n > 0 && n < b) {
-						n += 5;
-						var q = mpbuffer.charAt(n++);
-						var name = mpbuffer.substring(n, mpbuffer.indexOf(q, n));
-						fileMessages.add({ code:CPartKey, str:name });
-					}
-					mpbufpos = b + 4;  // jump over \r\n\r\n
-					mpstate = MPartReadingData;
-					return CONTROL;
-				}
-				return FETCH;
-			case MPartReadingData:
-				var b = mpbuffer.indexOf(mpboundary, mpbufpos);
-				if (b >= 0) {
-					while (mpbufpos < b - 2) {  // remove trailling \r\n
-						var len = b - 2 - mpbufpos;
-						if (len > mpbufsize)
-							len = mpbufsize;
-						fileMessages.add({ code:CPartData, str:mpbuffer.substr(mpbufpos, len) });
-						mpbufpos += len;
-					}
-					fileMessages.add({ code:CPartDone, str:null });
-					mpbufpos = b + mpboundary.length;  // jump over boundary but not \r\n
-					mpstate = MPartInit;
-					return CONTROL;
-				} else {
-					b = mpbuffer.indexOf("\r\n--", mpbufpos);
-					if (mpbufpos >= mpbuffer.length)
-						break;
-					if (b < 0 || !startsWith(mpboundary, mpbuffer.substr(mpbufpos + 2, mpboundary.length))) {
-						while (mpbufpos < mpbuffer.length) {
-							var len = mpbuffer.length - mpbufpos;
-							if (len > mpbufsize)
-								len = mpbufsize;
-							fileMessages.add({ code:CPartData, str:mpbuffer.substr(mpbufpos, len) });
-							mpbufpos += len;
-						}
-						return CONTROL;
-					}
-				}
-			}
-		}
-		if (mpbufpos > 0) {
-			mpbuffer = mpbuffer.substr(mpbufpos);
-			mpbufpos = 0;
-		}
-		return FETCH;
+		return null;
 	}
 
 	override public function processMessage( ) : Bool
@@ -407,10 +276,10 @@ class ClientFcgi extends Client
 				MessageHelper.write(sock.output, requestId, END_REQUEST(202, REQUEST_COMPLETE));
 				this.execute = false;
 
-			case STDIN(s) if (mpboundary != null):
+			case STDIN(s) if (multipart != null):
 				if (s == "")
-					mpeof = true;
-				mpbuffer += s;
+					eoin = true;
+				multipart.feed(s);
 				execute = true;
 				return true;
 
@@ -421,7 +290,8 @@ class ClientFcgi extends Client
 					params.push(p);
 				if (postData == null)
 					postData = "";
-				this.execute = true;
+				eoin = true;
+				execute = true;
 				return true;
 
 			case STDIN(s) if ((postData != null ? postData.length : 0) + s.length > (1 << 20)):
@@ -429,7 +299,7 @@ class ClientFcgi extends Client
 				// (256 KiB, as specified in neko.Web.getPostData() docs, is too little; plus, 1 MiB is Nginx's default)
 				Tora.log("Maximum POST data exceeded (1 MiB). Try using multipart encoding");
 				MessageHelper.write(sock.output, requestId, END_REQUEST(413, REQUEST_COMPLETE));
-				this.execute = false;
+				execute = false;
 				return true;
 
 			case STDIN(s):
@@ -477,13 +347,10 @@ class ClientFcgi extends Client
 						if (contentType.indexOf('multipart/form-data') > -1) {
 							var pos = contentType.indexOf('boundary=');
 							if (pos < 0)
-								return false;
+								return false;  // FIXME
 							pos += 9;  //boundary=
-							mpboundary = '--' + contentType.substr(pos);
-							mpstate = MBeforeFirstPart;
-							mpbuffer = "";
-							mpbufpos = 0;
-							doMultipart = false;
+							var boundary = '--' + contentType.substr(pos);
+							multipart = new MultipartParser(boundary);
 						}
 					}
 					else if ( name == 'CONTENT_LENGTH' ) 
