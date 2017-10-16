@@ -87,6 +87,8 @@ class MultipartParser {
 						add({ code:CPartFilename, buffer:buf, start:fn, length:(buf.indexOf(q, fn) - fn) });
 					}
 					var n = buf.indexOf("name=", pos);
+					if (n > 0 && fn > 0 && n == fn - 6)
+						n = buf.indexOf("name=", fn + 1);
 					if (n > 0 && n < b) {
 						n += 5;
 						var q = buf.charAt(n++);
