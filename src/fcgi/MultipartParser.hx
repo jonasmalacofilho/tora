@@ -183,10 +183,9 @@ class MultipartParser {
 				// we have queued messages or need more data to continue;
 				// either way, return control to the caller
 				break;
-
 			case MFinished:
 				add({ code:CExecute, buffer:null, start:0, length:0 });
-			case _:  // not enough data buffered to continue
+			case _:  // not enough buffered data to continue
 				return null;
 			}
 		}
@@ -217,8 +216,19 @@ class MultipartParser {
 		}
 	}
 
-	static inline function imatch(a:Int, b:Int)
-		return (a >= "A".code && a <= "Z".code ? a|32 : a) == (b >= "A".code && b <= "Z".code ? b|32 : b);
+	function readFieldValue(code:Code, startAt:Int, maxPos:Int):MultipartQueueItem
+	{
+		var quote = buf.charAt(startAt);
+		if (quote == "\"") {
+			var endAt = buf.indexOf(quote, ++startAt);
+			if (endAt < 0 && endAt > maxPos)
+				throw "Unterminated field";
+			pos = endAt + 1;
+			return { code:code, buffer:buf, start:startAt, length:(endAt - startAt) };
+		} else {
+			throw "Assert failed: unquoted field value or unexpected encoding";
+		}
+	}
 
 	function bufMatches(sub:String, at:Int, caseInsensitive=false)
 	{
@@ -233,18 +243,7 @@ class MultipartParser {
 		return i == sub.length;
 	}
 
-	function readFieldValue(code:Code, startAt:Int, maxPos:Int):MultipartQueueItem
-	{
-		var quote = buf.charAt(startAt);
-		if (quote == "\"") {
-			var endAt = buf.indexOf(quote, ++startAt);
-			if (endAt < 0 && endAt > maxPos)
-				throw "Unterminated field";
-			pos = endAt + 1;
-			return { code:code, buffer:buf, start:startAt, length:(endAt - startAt) };
-		} else {
-			throw "Assert failed: unquoted field value or unexpected encoding";
-		}
-	}
+	static inline function imatch(a:Int, b:Int)
+		return (a >= "A".code && a <= "Z".code ? a|32 : a) == (b >= "A".code && b <= "Z".code ? b|32 : b);
 }
 
