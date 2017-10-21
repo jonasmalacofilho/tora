@@ -24,17 +24,24 @@ class TestFastCgiMultipart {
 		Assert.same({ code:CExecute, data:null }, s(m.read()));
 	}
 
-	public function test_multiple_fields()
+	public function test_multiple_parts()
 	{
 		var m = new MultipartParser("--foo");
 		m.feed('--foo\r\nContent-Disposition: form-data; name="foo"\r\n\r\nFOO\r\n--foo\r\n');
-		m.feed('Content-Disposition: form-data; name="bar"\r\n\r\nBAR\r\n--foo--\r\n');
+		m.feed('Content-Disposition: form-data; name="bar"\r\n\r\nBAR\r\n--foo--');
 		Assert.same({ code:CPartKey, data:"foo" }, s(m.read()));
 		Assert.same({ code:CPartData, data:"FOO" }, s(m.read()));
 		Assert.same({ code:CPartDone, data:null }, s(m.read()));
 		Assert.same({ code:CPartKey, data:"bar" }, s(m.read()));
 		Assert.same({ code:CPartData, data:"BAR" }, s(m.read()));
 		Assert.same({ code:CPartDone, data:null }, s(m.read()));
+		Assert.same({ code:CExecute, data:null }, s(m.read()));
+	}
+
+	public function test_no_parts()
+	{
+		var m = new MultipartParser("--foo");
+		m.feed('--foo--');
 		Assert.same({ code:CExecute, data:null }, s(m.read()));
 	}
 
@@ -80,7 +87,10 @@ class TestFastCgiMultipart {
 	public function test_read_data_with_buffer_breaks()
 	{
 		var m = new MultipartParser("--foo");
-		m.feed('garbage\r\n--foo\r\nContent-Disposition: form-data; name="foo"\r\n\r\n');
+		m.feed('--foo\r\nContent-Dispo');
+		Assert.isNull(s(m.read()));
+
+		m.feed('sition: form-data; name="foo"\r\n\r\n');
 		Assert.same({ code:CPartKey, data:"foo" }, s(m.read()));
 		Assert.isNull(s(m.read()));
 
@@ -110,10 +120,7 @@ class TestFastCgiMultipart {
 	public function test_mfinished_spec()
 	{
 		var m = new MultipartParser("--foo");
-		m.feed('--foo\r\nContent-Disposition: form-data; name="foo"\r\n\r\nbar\r\n--foo--\r\n');
-		Assert.same({ code:CPartKey, data:"foo" }, s(m.read()));
-		Assert.same({ code:CPartData, data:"bar" }, s(m.read()));
-		Assert.same({ code:CPartDone, data:null }, s(m.read()));
+		m.feed('--foo--');
 		Assert.same({ code:CExecute, data:null }, s(m.read()));
 
 		// feed: don't store any data
