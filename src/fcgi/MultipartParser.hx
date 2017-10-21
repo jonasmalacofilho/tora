@@ -1,8 +1,28 @@
+/*
+	Tora - Neko Application Server
+	Copyright (C) 2008-2017 Haxe Foundation
+
+	This library is free software; you can redistribute it and/or
+	modify it under the terms of the GNU Lesser General Public
+	License as published by the Free Software Foundation; either
+	version 2.1 of the License, or (at your option) any later version.
+
+	This library is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+	Lesser General Public License for more details.
+
+	You should have received a copy of the GNU Lesser General Public
+	License along with this library; if not, write to the Free Software
+	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+*/
+
 package fcgi;
 
 import haxe.io.Bytes;
 import neko.NativeString;
 import tora.Code;
+
 using StringTools;
 
 enum MultipartState {
@@ -21,11 +41,15 @@ typedef MultipartMessage = {
 	?next:Null<MultipartMessage>
 }
 
-/*
+/**
 Streaming parser for multipart/form-data
 
-Mostly based on RFC 7578: https://tools.ietf.org/html/rfc7578
-*/
+Based on:
+
+ - [RFC 7578](https://tools.ietf.org/html/rfc7578): Returning Values from Forms: multipart/form-data (2015)
+ - [RFC 2388](https://tools.ietf.org/html/rfc2388): Returning Values from Forms: multipart/form-data (1998/superseeded by RFC 7578)
+ - [RFC 2046](https://tools.ietf.org/html/rfc2046): Multipurpose Internet Mail Extensions (MIME) Part Two: Media Types (1996)
+**/
 class MultipartParser {
 	public var boundary(default,null):String;
 	public var outputSize = 1 << 16;
@@ -40,14 +64,14 @@ class MultipartParser {
 		this.boundary = boundary;
 	}
 
-	/*
+	/**
 	Feed the parser more data
 
 	While this can be called as much as wanted, it is recommended to call it only
 	once the parser has exhausted reading from its current buffer.
 
 	Once MFinished, no additional data will be stored.
-	*/
+	**/
 	public function feed(s:String):Void
 	{
 		if (state == MFinished)
@@ -64,13 +88,13 @@ class MultipartParser {
 		pos = 0;
 	}
 
-	/*
+	/**
 	Parse multipart/form-data
 
 	Returns a recipe for a Tora buffer message or `null`, if more data is needed.
 	If done reading – if the closing boundary delimiter has been found – will
 	continously return `CExecute`.
-	*/
+	**/
 	public function read():MultipartMessage
 	{
 		while (queue == null) {
