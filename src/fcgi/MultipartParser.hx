@@ -38,7 +38,11 @@ typedef MultipartMessage = {
 	buffer:Null<String>,
 	start:Int,
 	length:Int,
-	?next:Null<MultipartMessage>
+}
+
+typedef MultipartQueueMessage = {
+	> MultipartMessage,
+	?next:Null<MultipartQueueMessage>
 }
 
 /**
@@ -52,12 +56,12 @@ Based on:
 **/
 class MultipartParser {
 	public var boundary(default,null):String;
-	public var outputSize = 1 << 16;
+	public var outputSize = 1 << 16;  // default to ModNekoApi's hardcoded size
 
 	var state = MBeforeFirstBoundary;
-	var pos = 0;
 	var buf:String;  // might be null MBeforeFirstBoundary or when MFinished
-	var queue:MultipartMessage;
+	var pos = 0;
+	var queue:MultipartQueueMessage;
 
 	public function new(boundary)
 	{
@@ -107,8 +111,8 @@ class MultipartParser {
 				state = MAtBoundary;
 			case MAtBoundary if (pos + 2 <= buf.length):  // buf must have room for \r\n or --
 				if (bufMatches("--", pos)) {
-					pos = 0;
 					buf = null;
+					pos = 0;
 					state = MFinished;
 				} else {
 					pos += 2;  // jump over \r\n
@@ -196,7 +200,7 @@ class MultipartParser {
 		return m;
 	}
 
-	function add(m:MultipartMessage)
+	function add(m:MultipartQueueMessage)
 	{
 		if (m.next != null)
 			throw "Assert failed: `m.next` set by caller";
@@ -226,7 +230,7 @@ class MultipartParser {
 		return i == sub.length;
 	}
 
-	function readFieldValue(code:Code, startAt:Int, maxPos:Int):MultipartMessage
+	function readFieldValue(code:Code, startAt:Int, maxPos:Int):MultipartQueueMessage
 	{
 		var quote = buf.charAt(startAt);
 		if (quote == "\"") {
