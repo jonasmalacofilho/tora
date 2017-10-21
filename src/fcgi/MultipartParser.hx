@@ -54,7 +54,6 @@ class MultipartParser {
 			return;
 		if (buf != null && pos < buf.length) {
 			var curlen = buf.length - pos;
-			trace('alloc\'ed ${curlen + s.length}');
 			var b = Bytes.alloc(curlen + s.length);
 			b.blit(0, Bytes.ofData(NativeString.ofString(buf)), pos, curlen);
 			b.blit(curlen, Bytes.ofData(NativeString.ofString(s)), 0, s.length);
