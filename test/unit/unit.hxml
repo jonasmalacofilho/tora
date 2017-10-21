@@ -1,0 +1,7 @@
+-lib utest
+-cp .
+-cp ../../
+-cp ../../src
+-main Main
+-neko unit-tests.n
+

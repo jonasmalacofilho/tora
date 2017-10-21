@@ -1,14 +1,15 @@
 -cp src
 -neko tora.n
 -main Tora
+-D neko-source
 
--lib instrument
---macro instrument.TraceCalls.hijack("Client")
---macro instrument.TraceCalls.hijack("ModNekoApi")
---macro instrument.TraceCalls.hijack("ModToraApi")
---macro instrument.TraceCalls.hijack("Tora")
---macro instrument.TraceCalls.hijack("fcgi.ClientFcgi")
---macro instrument.TraceCalls.hijack("fcgi.MultipartParser")
+# -lib instrument
+# --macro instrument.TraceCalls.hijack("Client")
+# --macro instrument.TraceCalls.hijack("ModNekoApi")
+# --macro instrument.TraceCalls.hijack("ModToraApi")
+# --macro instrument.TraceCalls.hijack("Tora")
+# --macro instrument.TraceCalls.hijack("fcgi.ClientFcgi")
+# --macro instrument.TraceCalls.hijack("fcgi.MultipartParser")
 
 --next
 -cp src
