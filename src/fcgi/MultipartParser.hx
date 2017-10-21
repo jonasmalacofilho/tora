@@ -75,7 +75,6 @@ class MultipartParser {
 	public function read():MultipartMessage
 	{
 		while (queue == null) {
-			// trace(Type.enumConstructor(state), pos, (buf != null ? buf.length : -1));
 			switch state {
 			case MBeforeFirstBoundary if (buf != null):  // buf might still be null MBeforeFirstBoundary
 				var b = buf.indexOf(boundary, pos);
@@ -216,12 +215,6 @@ class MultipartParser {
 		} else {
 			throw "Assert failed: unquoted field value or unexpected encoding";
 		}
-	}
-
-	static inline function __startsWith(buffer:String, start:String, ?bufPos=0)
-	{
-		trace('alloc\'ed ${start.length}-');
-		return buffer.length >= bufPos + start.length && buffer.substr(bufPos, start.length) == start;
 	}
 }
 
