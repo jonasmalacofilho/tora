@@ -38,13 +38,6 @@ class TestFastCgiMultipart {
 		Assert.same({ code:CExecute, data:null }, s(m.read()));
 	}
 
-	public function test_no_parts()
-	{
-		var m = new MultipartParser("--foo");
-		m.feed('--foo--');
-		Assert.same({ code:CExecute, data:null }, s(m.read()));
-	}
-
 	public function test_filenames()
 	{
 		var m = new MultipartParser("--foo");
@@ -117,7 +110,26 @@ class TestFastCgiMultipart {
 		Assert.same({ code:CExecute, data:null }, s(m.read()));
 	}
 
-	public function test_mfinished_spec()
+	public function test_no_parts()
+	{
+		var m = new MultipartParser("--foo");
+		m.feed('--foo--');
+		Assert.same({ code:CExecute, data:null }, s(m.read()));
+	}
+
+	public function test_before_first_boundary()
+	{
+		var m = new MultipartParser("--foo");
+		Assert.isNull(s(m.read()));
+
+		m.feed('garbage\r\n');
+		Assert.isNull(s(m.read()));
+
+		m.feed('--foo--');
+		Assert.same({ code:CExecute, data:null }, s(m.read()));
+	}
+
+	public function test_after_last_one()
 	{
 		var m = new MultipartParser("--foo");
 		m.feed('--foo--');
