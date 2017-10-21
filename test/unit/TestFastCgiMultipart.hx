@@ -106,5 +106,22 @@ class TestFastCgiMultipart {
 		m.feed('--');
 		Assert.same({ code:CExecute, data:null }, s(m.read()));
 	}
+
+	public function test_mfinished_spec()
+	{
+		var m = new MultipartParser("--foo");
+		m.feed('--foo\r\nContent-Disposition: form-data; name="foo"\r\n\r\nbar\r\n--foo--\r\n');
+		Assert.same({ code:CPartKey, data:"foo" }, s(m.read()));
+		Assert.same({ code:CPartData, data:"bar" }, s(m.read()));
+		Assert.same({ code:CPartDone, data:null }, s(m.read()));
+		Assert.same({ code:CExecute, data:null }, s(m.read()));
+
+		// feed: don't store any data
+		m.feed("foo");
+		Assert.isNull(@:privateAccess m.buf);
+
+		// read: return CExecute, no matter what
+		Assert.same({ code:CExecute, data:null }, s(m.read()));
+	}
 }
 
