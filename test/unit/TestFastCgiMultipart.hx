@@ -24,15 +24,29 @@ class TestFastCgiMultipart {
 		Assert.same({ code:CExecute, data:null }, s(m.read()));
 	}
 
+	public function test_multiple_fields()
+	{
+		var m = new MultipartParser("--foo");
+		m.feed('--foo\r\nContent-Disposition: form-data; name="foo"\r\n\r\nFOO\r\n--foo\r\n');
+		m.feed('Content-Disposition: form-data; name="bar"\r\n\r\nBAR\r\n--foo--\r\n');
+		Assert.same({ code:CPartKey, data:"foo" }, s(m.read()));
+		Assert.same({ code:CPartData, data:"FOO" }, s(m.read()));
+		Assert.same({ code:CPartDone, data:null }, s(m.read()));
+		Assert.same({ code:CPartKey, data:"bar" }, s(m.read()));
+		Assert.same({ code:CPartData, data:"BAR" }, s(m.read()));
+		Assert.same({ code:CPartDone, data:null }, s(m.read()));
+		Assert.same({ code:CExecute, data:null }, s(m.read()));
+	}
+
 	public function test_filenames()
 	{
 		var m = new MultipartParser("--foo");
-		m.feed('garbage\r\n--foo\r\nContent-Disposition: form-data; name="foo"; filename="foo.png"\r\n\r\n');
+		m.feed('--foo\r\nContent-Disposition: form-data; name="foo"; filename="foo.png"\r\n\r\n');
 		Assert.same({ code:CPartFilename, data:"foo.png" }, s(m.read()));
 		Assert.same({ code:CPartKey, data:"foo" }, s(m.read()));
 
 		var m = new MultipartParser("--foo");
-		m.feed('garbage\r\n--foo\r\nContent-Disposition: form-data; filename="foo.png"; name="foo"\r\n\r\n');
+		m.feed('--foo\r\nContent-Disposition: form-data; filename="foo.png"; name="foo"\r\n\r\n');
 		Assert.same({ code:CPartFilename, data:"foo.png" }, s(m.read()));
 		Assert.same({ code:CPartKey, data:"foo" }, s(m.read()));
 	}
@@ -40,7 +54,7 @@ class TestFastCgiMultipart {
 	public function test_linebreaks_in_disposition()
 	{
 		var m = new MultipartParser("--foo");
-		m.feed('garbage\r\n--foo\r\nContent-Disposition: form-data; name="foo";\r\n  filename="foo.png"\r\n\r\n');
+		m.feed('--foo\r\nContent-Disposition: form-data; name="foo";\r\n  filename="foo.png"\r\n\r\n');
 		Assert.same({ code:CPartFilename, data:"foo.png" }, s(m.read()));
 		Assert.same({ code:CPartKey, data:"foo" }, s(m.read()));
 	}
@@ -48,11 +62,11 @@ class TestFastCgiMultipart {
 	public function test_part_has_content_type()
 	{
 		var m = new MultipartParser("--foo");
-		m.feed('garbage\r\n--foo\r\nContent-Disposition: form-data; name="foo"\r\nContent-Type: bar\r\n\r\n');
+		m.feed('--foo\r\nContent-Disposition: form-data; name="foo"\r\nContent-Type: bar\r\n\r\n');
 		Assert.same({ code:CPartKey, data:"foo" }, s(m.read()));
 
 		var m = new MultipartParser("--foo");
-		m.feed('garbage\r\n--foo\r\nContent-Type: bar\r\nContent-Disposition: form-data; name="foo"\r\n\r\n');
+		m.feed('--foo\r\nContent-Type: bar\r\nContent-Disposition: form-data; name="foo"\r\n\r\n');
 		Assert.same({ code:CPartKey, data:"foo" }, s(m.read()));
 	}
 
