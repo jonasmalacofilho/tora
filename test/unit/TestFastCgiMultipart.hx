@@ -5,8 +5,8 @@ import utest.Assert;
 class TestFastCgiMultipart {
 	public function new() {}
 
-	// simplify a MultipartMessage for easier comparison
-	static function s(msg:MultipartMessage)
+	// simplify a Recipe for easier comparison
+	static function s(msg:Recipe)
 	{
 		if (msg == null)
 			return null;

@@ -25,7 +25,7 @@ import tora.Code;
 
 using StringTools;
 
-enum MultipartState {
+private enum MultipartState {
 	MBeforeFirstBoundary;
 	MAtBoundary;
 	MPartReadingHeaders;
@@ -33,16 +33,19 @@ enum MultipartState {
 	MFinished;
 }
 
-typedef MultipartMessage = {
+private typedef MultipartQueueItem = {
+	> Recipe,
+	?next:Null<MultipartQueueItem>
+}
+
+/**
+Recipe for a Tora buffer message
+**/
+typedef Recipe = {
 	code:Code,
 	buffer:Null<String>,
 	start:Int,
 	length:Int,
-}
-
-typedef MultipartQueueMessage = {
-	> MultipartMessage,
-	?next:Null<MultipartQueueMessage>
 }
 
 /**
@@ -61,7 +64,7 @@ class MultipartParser {
 	var state = MBeforeFirstBoundary;
 	var buf:String;  // might be null MBeforeFirstBoundary or when MFinished
 	var pos = 0;
-	var queue:MultipartQueueMessage;
+	var queue:MultipartQueueItem;
 
 	public function new(boundary)
 	{
@@ -71,10 +74,10 @@ class MultipartParser {
 	/**
 	Feed the parser more data
 
-	While this can be called as much as wanted, it is recommended to call it only
-	once the parser has exhausted reading from its current buffer.
+	It is recommended to only feed the parser once it has exhausted reading from
+	previous data, to reduce the number of buffer allocations and their size.
 
-	Once MFinished, no additional data will be stored.
+	Once MFinished, no additional data is stored.
 	**/
 	public function feed(s:String):Void
 	{
@@ -95,11 +98,11 @@ class MultipartParser {
 	/**
 	Parse multipart/form-data
 
-	Returns a recipe for a Tora buffer message or `null`, if more data is needed.
+	Returns a Recipe for a Tora buffer message or `null`, if more data is needed.
 	If done reading – if the closing boundary delimiter has been found – will
 	continously return `CExecute`.
 	**/
-	public function read():MultipartMessage
+	public function read():Recipe
 	{
 		while (queue == null) {
 			switch state {
@@ -200,7 +203,7 @@ class MultipartParser {
 		return m;
 	}
 
-	function add(m:MultipartQueueMessage)
+	function add(m:MultipartQueueItem)
 	{
 		if (m.next != null)
 			throw "Assert failed: `m.next` set by caller";
@@ -230,7 +233,7 @@ class MultipartParser {
 		return i == sub.length;
 	}
 
-	function readFieldValue(code:Code, startAt:Int, maxPos:Int):MultipartQueueMessage
+	function readFieldValue(code:Code, startAt:Int, maxPos:Int):MultipartQueueItem
 	{
 		var quote = buf.charAt(startAt);
 		if (quote == "\"") {
