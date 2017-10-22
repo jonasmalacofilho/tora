@@ -288,8 +288,6 @@ class ClientFcgi extends Client
 					params.push(p);
 				for (p in getParamValues(postData, false))
 					params.push(p);
-				if (postData == null)
-					postData = "";
 				eoin = true;
 				execute = true;
 				return true;
