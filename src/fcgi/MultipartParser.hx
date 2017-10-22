@@ -31,6 +31,7 @@ private enum MultipartState {
 	MPartReadingHeaders;
 	MPartReadingData;
 	MFinished;
+	MMissingBoundary;
 }
 
 private typedef MultipartQueueItem = {
@@ -58,17 +59,26 @@ Based on:
  - [RFC 2046](https://tools.ietf.org/html/rfc2046): Multipurpose Internet Mail Extensions (MIME) Part Two: Media Types (1996)
 **/
 class MultipartParser {
-	public var boundary(default,null):String;
+	public var boundary(default,null):Null<String>;  // (null <=> missing) => CError
 	public var outputSize = 1 << 16;  // default to ModNekoApi's hardcoded size
 
 	var state = MBeforeFirstBoundary;
-	var buf:String;  // might be null MBeforeFirstBoundary or when MFinished
+	var buf:Null<String>;  // might be null MBeforeFirstBoundary or when MFinished
 	var pos = 0;
-	var queue:MultipartQueueItem;
+	var queue:Null<MultipartQueueItem>;
 
+	/**
+	Construct a new multipart/form-data parser
+
+	The boundary can be `null`, but will cause all calls to `read()` to raise an
+	exception.  This allows control to reach the module before the exception is
+	raised.
+	**/
 	public function new(boundary)
 	{
 		this.boundary = boundary;
+		if (boundary == null)
+			state = MMissingBoundary;
 	}
 
 	/**
@@ -101,6 +111,9 @@ class MultipartParser {
 	Returns a Recipe for a Tora buffer message or `null`, if more data is needed.
 	If done reading – if the closing boundary delimiter has been found – will
 	continously return `CExecute`.
+
+	If the parser was created with a missing (i.e. `null`) boundary, this always
+	raises a ('Missing boundary for multipart/form-data':String) exception.
 	**/
 	public function read():Recipe
 	{
@@ -185,6 +198,8 @@ class MultipartParser {
 				break;
 			case MFinished:
 				add({ code:CExecute, buffer:null, start:0, length:0 });
+			case MMissingBoundary:
+				throw "Missing boundary for multipart/form-data";
 			case _:  // not enough buffered data to continue
 				return null;
 			}

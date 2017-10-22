@@ -142,5 +142,13 @@ class TestFastCgiMultipart {
 		// read: return CExecute, no matter what
 		Assert.same({ code:CExecute, data:null }, s(m.read()));
 	}
+
+	public function test_missing_boundary()
+	{
+		var m = new MultipartParser(null);
+		Assert.raises(m.read, String);
+		m.feed('--foo--');
+		Assert.raises(m.read, String);
+	}
 }
 

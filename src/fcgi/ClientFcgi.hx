@@ -346,10 +346,7 @@ class ClientFcgi extends Client
 
 						if (contentType.indexOf('multipart/form-data') > -1) {
 							var pos = contentType.indexOf('boundary=');
-							if (pos < 0)
-								return false;  // FIXME
-							pos += 9;  //boundary=
-							var boundary = '--' + contentType.substr(pos);
+							var boundary = b < 0 ? null : "--" + contentType.substr(pos + 9);
 							multipart = new MultipartParser(boundary);
 						}
 					}
