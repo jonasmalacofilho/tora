@@ -294,14 +294,6 @@ class ClientFcgi extends Client
 				execute = true;
 				return true;
 
-			case STDIN(s) if ((postData != null ? postData.length : 0) + s.length > (1 << 20)):
-				// hardcoded limit: 1 MiB
-				// (256 KiB, as specified in neko.Web.getPostData() docs, is too little; plus, 1 MiB is Nginx's default)
-				Tora.log("Maximum POST data exceeded (1 MiB). Try using multipart encoding");
-				MessageHelper.write(sock.output, requestId, END_REQUEST(413, REQUEST_COMPLETE));
-				execute = false;
-				return true;
-
 			case STDIN(s):
 				if (postData == null)
 					postData = '';
